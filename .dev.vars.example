@@ -1,0 +1,3 @@
+# Local-only Worker variables.
+# Add non-secret placeholders here; never commit real credentials.
+EXAMPLE_VALUE=local-development-only
