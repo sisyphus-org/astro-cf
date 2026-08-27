@@ -1,8 +1,42 @@
 # Operations
 
-## Deployment
+## CI
 
-A push to `main` runs `.github/workflows/deploy.yml`: install, test, build, Wrangler dry run, then deploy. The workflow consumes the organization-level `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets; values must never be copied into this repository.
+`.github/workflows/ci.yml` runs for pull requests and pushes to non-`main` branches. It installs dependencies, runs tests and type checks, builds Astro, and validates the Worker with a Wrangler dry run. This workflow has read-only repository permissions and does not receive Cloudflare secrets.
+
+## Production deployment
+
+A push to `main` runs `.github/workflows/deploy.yml`: install, test, build, Wrangler dry run, then deploy the production Worker named `astro-cf`. Production has no manual branch dispatch path.
+
+The workflow consumes the organization-level `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets; values must never be copied into this repository.
+
+## Optional branch preview
+
+`.github/workflows/preview.yml` is a manually dispatched workflow for non-`main` branches. Select the target branch in GitHub Actions and run **Deploy branch preview**. With the GitHub CLI:
+
+```sh
+gh workflow run preview.yml --ref <branch>
+```
+
+The workflow derives a stable, sanitized Worker name from the full branch name:
+
+```text
+astro-cf-preview-<branch-slug>-<branch-hash>
+```
+
+It then deploys with `wrangler deploy --name <preview-worker>`. Because the Worker name is never `astro-cf`, a preview cannot replace the production Worker or its URL. The exact preview URL is emitted by Wrangler and added to the GitHub Actions job summary when available.
+
+Preview deploys are intentionally manual: ordinary branch pushes and pull requests run CI only and never receive Cloudflare credentials.
+
+### Preview cleanup
+
+After review, find the Worker name in the workflow summary and delete only that preview Worker:
+
+```sh
+npx wrangler delete astro-cf-preview-<branch-slug>-<branch-hash>
+```
+
+Confirm the name begins with `astro-cf-preview-` before approving deletion. Never use this cleanup command with `astro-cf`.
 
 ## Verification
 
