@@ -2,27 +2,33 @@ name: Deploy branch preview
 
 on:
   workflow_dispatch:
+    inputs:
+      target_ref:
+        description: Branch, tag, or commit to deploy as an isolated preview
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: cloudflare-preview-${{ github.ref }}
+  group: cloudflare-preview-${{ inputs.target_ref }}
   cancel-in-progress: false
 
 jobs:
-  deploy-preview:
-    if: github.ref_type == 'branch' && github.ref_name != 'main'
+  build-preview:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    environment:
-      name: branch-preview
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+      - name: Checkout requested ref
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.target_ref }}
+          persist-credentials: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 22
           cache: npm
@@ -39,32 +45,82 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Validate Worker bundle
-        run: npm run deploy:dry-run
+      - name: Build preview Worker bundle without credentials
+        run: npx wrangler deploy --dry-run --outdir preview-bundle
+
+      - name: Upload credential-free preview artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: cloudflare-preview-${{ github.run_id }}
+          path: |
+            preview-bundle/worker.js
+            dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  deploy-preview:
+    needs: build-preview
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: branch-preview
+    steps:
+      - name: Checkout trusted deployment configuration
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install trusted deployment dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Download credential-free preview artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: cloudflare-preview-${{ github.run_id }}
+          path: preview-artifact
 
       - name: Derive isolated Worker name
         id: preview
         env:
-          REF_NAME: ${{ github.ref_name }}
+          TARGET_REF: ${{ inputs.target_ref }}
         shell: bash
         run: |
           set -euo pipefail
-          slug=$(printf '%s' "$REF_NAME" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed -E 's/^-+//; s/-+$//' | cut -c1-28)
+          slug=$(printf '%s' "$TARGET_REF" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed -E 's/^-+//; s/-+$//' | cut -c1-28)
           if [[ -z "$slug" ]]; then
-            slug=branch
+            slug=ref
           fi
-          hash=$(printf '%s' "$REF_NAME" | shasum -a 256 | cut -c1-8)
+          hash=$(printf '%s' "$TARGET_REF" | shasum -a 256 | cut -c1-8)
           worker_name="astro-cf-preview-${slug}-${hash}"
           echo "worker_name=$worker_name" >> "$GITHUB_OUTPUT"
           echo "Deploying isolated preview Worker: $worker_name"
 
+      - name: Validate trusted preview configuration
+        env:
+          WORKER_NAME: ${{ steps.preview.outputs.worker_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$WORKER_NAME" == astro-cf-preview-* ]]
+          [[ "$WORKER_NAME" != astro-cf ]]
+          npx wrangler deploy --dry-run --config wrangler.preview.jsonc --name "$WORKER_NAME"
+
       - name: Deploy isolated preview Worker
         id: deploy
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: deploy --name ${{ steps.preview.outputs.worker_name }}
+          command: deploy --config wrangler.preview.jsonc --name ${{ steps.preview.outputs.worker_name }}
 
       - name: Publish preview summary
         env:

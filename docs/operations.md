@@ -12,31 +12,37 @@ The workflow consumes the organization-level `CLOUDFLARE_API_TOKEN` and `CLOUDFL
 
 ## Optional branch preview
 
-`.github/workflows/preview.yml` is a manually dispatched workflow for non-`main` branches. Select the target branch in GitHub Actions and run **Deploy branch preview**. With the GitHub CLI:
+`.github/workflows/preview.yml` is a privileged workflow stored and executed from the default branch. Leave the workflow run ref set to `main`, provide the branch/tag/commit in the required `target_ref` input, and run **Deploy branch preview**. With the GitHub CLI:
 
 ```sh
-gh workflow run preview.yml --ref <branch>
+gh workflow run preview.yml --ref main -f target_ref=<branch-or-commit>
 ```
 
-The workflow derives a stable, sanitized Worker name from the full branch name:
+The first job checks out `target_ref`, runs CI, builds Astro, and creates a credential-free Worker bundle. It never receives Cloudflare credentials. The second job checks out the trusted `main` revision containing the workflow and `wrangler.preview.jsonc`, downloads only the built bundle and static assets, and then receives the Cloudflare credentials.
+
+The trusted preview configuration enables Workers.dev but defines no custom routes, production bindings, or migrations. All third-party actions in privileged workflows are pinned to reviewed full commit SHAs.
+
+The workflow derives a stable, sanitized Worker name from `target_ref`:
 
 ```text
-astro-cf-preview-<branch-slug>-<branch-hash>
+astro-cf-preview-<ref-slug>-<ref-hash>
 ```
 
-It then deploys with `wrangler deploy --name <preview-worker>`. Because the Worker name is never `astro-cf`, a preview cannot replace the production Worker or its URL. The exact preview URL is emitted by Wrangler and added to the GitHub Actions job summary when available.
+The exact preview URL is emitted by Wrangler and added to the GitHub Actions job summary when available. The production Worker remains `astro-cf`; ordinary branch pushes and pull requests run CI only and never receive Cloudflare credentials.
 
-Preview deploys are intentionally manual: ordinary branch pushes and pull requests run CI only and never receive Cloudflare credentials.
+### Required GitHub environment protection
+
+The privileged job uses the `branch-preview` GitHub environment. Configure that environment with narrowly scoped deployment-branch rules and, when available, required reviewers. Manual dispatch is an approval gate, not a substitute for repository access control. A preview-only Cloudflare token should replace the shared token if Cloudflare account isolation becomes available.
 
 ### Preview cleanup
 
-After review, find the Worker name in the workflow summary and delete only that preview Worker:
+After review, copy the exact Worker name from the workflow summary. The guarded script refuses names outside the `astro-cf-preview-*` namespace and requires explicit confirmation:
 
 ```sh
-npx wrangler delete astro-cf-preview-<branch-slug>-<branch-hash>
+./scripts/delete-preview.sh astro-cf-preview-<ref-slug>-<ref-hash> --confirm
 ```
 
-Confirm the name begins with `astro-cf-preview-` before approving deletion. Never use this cleanup command with `astro-cf`.
+Never delete `astro-cf`; it is the production Worker.
 
 ## Verification
 
