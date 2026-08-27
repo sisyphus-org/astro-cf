@@ -1,4 +1,4 @@
-name: Approve and deploy PR preview
+name: Deploy preview
 
 on:
   pull_request_target:
@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   preview-approval:
-    name: Preview approval
+    name: Deploy preview
     if: >-
       github.event.pull_request.draft == false &&
       github.event.pull_request.head.repo.full_name == github.repository
@@ -35,7 +35,7 @@ jobs:
           printf 'Approved preview build for PR #%s at %s\n' "$PR_NUMBER" "$HEAD_SHA"
 
   build-preview:
-    name: Build approved preview
+    name: Internal / Build preview
     needs: preview-approval
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -104,7 +104,7 @@ jobs:
           retention-days: 7
 
   deploy-preview:
-    name: Deploy approved preview
+    name: Internal / Publish preview
     needs: build-preview
     runs-on: ubuntu-latest
     timeout-minutes: 15

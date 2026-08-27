@@ -20,7 +20,7 @@ npm run deploy:dry-run
 
 ## CI and deployment
 
-- Pull requests run read-only CI automatically. They also show an optional `Preview approval` deployment job, but no preview build or deployment starts until a required reviewer approves the `branch-preview` environment from the PR workflow run.
+- Pull requests run read-only CI automatically. They also show one optional user-facing `Deploy preview` check. No preview build or deployment starts until a required reviewer approves the `branch-preview` environment. After approval, `Internal / Build preview` and `Internal / Publish preview` remain separate for credential isolation but require no further user decisions.
 - Pushes to `main` continue to run `.github/workflows/deploy.yml` and deploy the production Worker `astro-cf`.
 - After approval, PR code is built without credentials on one runner; a separate trusted runner verifies/bootstraps the secret-free `astro-cf-preview` service and uploads the artifact with `wrangler versions upload --preview-alias`. Production `astro-cf` is never referenced or modified.
 - Cloudflare non-production branch builds must remain disabled so they cannot bypass the GitHub approval gate. Cloudflare Access `Previews only` protects the resulting isolated preview alias.
