@@ -14,7 +14,7 @@ The workflow consumes the organization-level `CLOUDFLARE_API_TOKEN` and `CLOUDFL
 
 Cloudflare **Builds for non-production branches must be disabled**. `.github/workflows/pr-preview.yml` is the only intended PR preview trigger.
 
-When a non-draft same-repository pull request targets `main`, GitHub creates a `Preview approval` deployment for the protected `branch-preview` environment. No preview build or Cloudflare API call occurs until a required reviewer selects **Review deployments → Approve and deploy**.
+When a non-draft same-repository pull request targets `main`, GitHub creates one user-facing `Deploy preview` check for the protected `branch-preview` environment. No preview build or Cloudflare API call occurs until a required reviewer selects **Review deployments → Approve and deploy**. After approval, two internal jobs remain intentionally separate so untrusted PR code and Cloudflare credentials never share a runner; they require no additional approval.
 
 After approval:
 
@@ -41,7 +41,7 @@ In **Workers & Pages → astro-cf → Settings → Build → Branch control**, k
 
 After an approved preview run:
 
-1. Open the URL posted by `Approve and deploy PR preview` in the pull request comment.
+1. Open the URL posted by `Deploy preview` in the pull request comment.
 2. With the approved Tailscale exit node, confirm `/` returns `200` and displays the PR revision.
 3. Confirm `/api/health` returns `200` with `{ "status": "ok" }`.
 4. Without the exit node from an external network, confirm the same preview URL returns `403`.
